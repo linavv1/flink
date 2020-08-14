@@ -50,11 +50,13 @@ public class ResultPartitionBuilder {
 
 	private FileChannelManager channelManager = NoOpFileChannelManager.INSTANCE;
 
-	private NetworkBufferPool networkBufferPool = new NetworkBufferPool(1, 1, 1);
+	private NetworkBufferPool networkBufferPool = new NetworkBufferPool(1, 1);
 
 	private int networkBuffersPerChannel = 1;
 
 	private int floatingNetworkBuffersPerGate = 1;
+
+	private int maxBuffersPerChannel = Integer.MAX_VALUE;
 
 	private int networkBufferSize = 1;
 
@@ -167,7 +169,8 @@ public class ResultPartitionBuilder {
 			networkBufferSize,
 			releasedOnConsumption,
 			blockingShuffleCompressionEnabled,
-			compressionCodec);
+			compressionCodec,
+			maxBuffersPerChannel);
 
 		FunctionWithException<BufferPoolOwner, BufferPool, IOException> factory = bufferPoolFactory.orElseGet(() ->
 			resultPartitionFactory.createBufferPoolFactory(numberOfSubpartitions, partitionType));

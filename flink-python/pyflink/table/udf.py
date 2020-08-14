@@ -21,6 +21,7 @@ import functools
 import inspect
 
 from pyflink.java_gateway import get_gateway
+from pyflink.metrics import MetricGroup
 from pyflink.table.types import DataType, _to_java_type
 from pyflink.util import utils
 
@@ -33,15 +34,30 @@ class FunctionContext(object):
     user-defined function is executed. The information includes the metric group,
     and global job parameters, etc.
     """
-    pass
+
+    def __init__(self, base_metric_group):
+        self._base_metric_group = base_metric_group
+
+    def get_metric_group(self) -> MetricGroup:
+        """
+        Returns the metric group for this parallel subtask.
+
+        .. versionadded:: 1.11.0
+        """
+        if self._base_metric_group is None:
+            raise RuntimeError("Metric has not been enabled. You can enable "
+                               "metric with the 'python.metric.enabled' configuration.")
+        return self._base_metric_group
 
 
 class UserDefinedFunction(abc.ABC):
     """
     Base interface for user-defined function.
+
+    .. versionadded:: 1.10.0
     """
 
-    def open(self, function_context):
+    def open(self, function_context: FunctionContext):
         """
         Initialization method for the function. It is called before the actual working methods
         and thus suitable for one time setup work.
@@ -76,6 +92,8 @@ class ScalarFunction(UserDefinedFunction):
     """
     Base interface for user-defined scalar function. A user-defined scalar functions maps zero, one,
     or multiple scalar values to a new scalar value.
+
+    .. versionadded:: 1.10.0
     """
 
     @abc.abstractmethod
@@ -90,6 +108,8 @@ class TableFunction(UserDefinedFunction):
     """
     Base interface for user-defined table function. A user-defined table function creates zero, one,
     or multiple rows to a new row value.
+
+    .. versionadded:: 1.11.0
     """
 
     @abc.abstractmethod
@@ -140,14 +160,15 @@ class UserDefinedFunctionWrapper(object):
                 "Invalid function: not a function or callable (__call__ is not defined): {0}"
                 .format(type(func)))
 
-        if not isinstance(input_types, collections.Iterable):
-            input_types = [input_types]
+        if input_types is not None:
+            if not isinstance(input_types, collections.Iterable):
+                input_types = [input_types]
 
-        for input_type in input_types:
-            if not isinstance(input_type, DataType):
-                raise TypeError(
-                    "Invalid input_type: input_type should be DataType but contains {}".format(
-                        input_type))
+            for input_type in input_types:
+                if not isinstance(input_type, DataType):
+                    raise TypeError(
+                        "Invalid input_type: input_type should be DataType but contains {}".format(
+                            input_type))
 
         self._func = func
         self._input_types = input_types
@@ -208,8 +229,11 @@ class UserDefinedScalarFunctionWrapper(UserDefinedFunctionWrapper):
         import cloudpickle
         serialized_func = cloudpickle.dumps(func)
 
-        j_input_types = utils.to_jarray(gateway.jvm.TypeInformation,
-                                        [_to_java_type(i) for i in self._input_types])
+        if self._input_types is not None:
+            j_input_types = utils.to_jarray(
+                gateway.jvm.TypeInformation, [_to_java_type(i) for i in self._input_types])
+        else:
+            j_input_types = None
         j_result_type = _to_java_type(self._result_type)
         j_function_kind = get_python_function_kind(self._udf_type)
         PythonScalarFunction = gateway.jvm \
@@ -260,8 +284,11 @@ class UserDefinedTableFunctionWrapper(UserDefinedFunctionWrapper):
         serialized_func = cloudpickle.dumps(func)
 
         gateway = get_gateway()
-        j_input_types = utils.to_jarray(gateway.jvm.TypeInformation,
-                                        [_to_java_type(i) for i in self._input_types])
+        if self._input_types is not None:
+            j_input_types = utils.to_jarray(
+                gateway.jvm.TypeInformation, [_to_java_type(i) for i in self._input_types])
+        else:
+            j_input_types = None
 
         j_result_types = utils.to_jarray(gateway.jvm.TypeInformation,
                                          [_to_java_type(i) for i in self._result_types])
@@ -307,8 +334,8 @@ def udf(f=None, input_types=None, result_type=None, deterministic=None, name=Non
 
             >>> add_one = udf(lambda i: i + 1, DataTypes.BIGINT(), DataTypes.BIGINT())
 
-            >>> @udf(input_types=[DataTypes.BIGINT(), DataTypes.BIGINT()],
-            ...      result_type=DataTypes.BIGINT())
+            >>> # The input_types is optional.
+            >>> @udf(result_type=DataTypes.BIGINT())
             ... def add(i, j):
             ...     return i + j
 
@@ -319,7 +346,7 @@ def udf(f=None, input_types=None, result_type=None, deterministic=None, name=Non
 
     :param f: lambda function or user-defined function.
     :type f: function or UserDefinedFunction or type
-    :param input_types: the input data types.
+    :param input_types: optional, the input data types.
     :type input_types: list[DataType] or DataType
     :param result_type: the result data type.
     :type result_type: DataType
@@ -334,6 +361,8 @@ def udf(f=None, input_types=None, result_type=None, deterministic=None, name=Non
     :type udf_type: str
     :return: UserDefinedScalarFunctionWrapper or function.
     :rtype: UserDefinedScalarFunctionWrapper or function
+
+    .. versionadded:: 1.10.0
     """
     if udf_type not in ('general', 'pandas'):
         raise ValueError("The udf_type must be one of 'general, pandas', got %s." % udf_type)
@@ -353,8 +382,8 @@ def udtf(f=None, input_types=None, result_types=None, deterministic=None, name=N
     Example:
         ::
 
-            >>> @udtf(input_types=[DataTypes.BIGINT(), DataTypes.BIGINT()],
-            ...      result_types=[DataTypes.BIGINT(), DataTypes.BIGINT()])
+            >>> # The input_types is optional.
+            >>> @udtf(result_types=[DataTypes.BIGINT(), DataTypes.BIGINT()])
             ... def range_emit(s, e):
             ...     for i in range(e):
             ...         yield s, i
@@ -366,7 +395,7 @@ def udtf(f=None, input_types=None, result_types=None, deterministic=None, name=N
 
     :param f: user-defined table function.
     :type f: function or UserDefinedFunction or type
-    :param input_types: the input data types.
+    :param input_types: optional, the input data types.
     :type input_types: list[DataType] or DataType
     :param result_types: the result data types.
     :type result_types: list[DataType] or DataType
@@ -378,6 +407,8 @@ def udtf(f=None, input_types=None, result_types=None, deterministic=None, name=N
     :type deterministic: bool
     :return: UserDefinedTableFunctionWrapper or function.
     :rtype: UserDefinedTableFunctionWrapper or function
+
+    .. versionadded:: 1.11.0
     """
     # decorator
     if f is None:

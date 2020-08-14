@@ -93,14 +93,15 @@ public class ResultPartitionFactoryTest extends TestLogger {
 		ResultPartitionFactory factory = new ResultPartitionFactory(
 			new ResultPartitionManager(),
 			fileChannelManager,
-			new NetworkBufferPool(1, SEGMENT_SIZE, 1),
+			new NetworkBufferPool(1, SEGMENT_SIZE),
 			BoundedBlockingSubpartitionType.AUTO,
 			1,
 			1,
 			SEGMENT_SIZE,
 			releasePartitionOnConsumption,
 			false,
-			"LZ4");
+			"LZ4",
+			Integer.MAX_VALUE);
 
 		final ResultPartitionDeploymentDescriptor descriptor = new ResultPartitionDeploymentDescriptor(
 			PartitionDescriptorBuilder

@@ -26,17 +26,14 @@ LOCAL_OUTPUT_PATH="${TEST_DATA_DIR}/out/wc_out"
 OUTPUT_PATH="/tmp/wc_out"
 ARGS="--output ${OUTPUT_PATH}"
 
-function cleanup {
+function internal_cleanup {
     kubectl delete deployment ${CLUSTER_ID}
     kubectl delete clusterrolebinding ${CLUSTER_ROLE_BINDING}
-    stop_kubernetes
 }
 
 start_kubernetes
 
-cd "$DOCKER_MODULE_DIR"
-# Build a Flink image without any user jars
-./build.sh --from-local-dist --job-artifacts ${TEST_INFRA_DIR}/test-data/words --image-name ${FLINK_IMAGE_NAME}
+build_image ${FLINK_IMAGE_NAME}
 
 kubectl create clusterrolebinding ${CLUSTER_ROLE_BINDING} --clusterrole=edit --serviceaccount=default:default --namespace=default
 
@@ -45,14 +42,29 @@ mkdir -p "$(dirname $LOCAL_OUTPUT_PATH)"
 # Set the memory and cpu smaller than default, so that the jobmanager and taskmanager pods could be allocated in minikube.
 "$FLINK_DIR"/bin/kubernetes-session.sh -Dkubernetes.cluster-id=${CLUSTER_ID} \
     -Dkubernetes.container.image=${FLINK_IMAGE_NAME} \
-    -Djobmanager.heap.size=512m \
-    -Dcontainerized.heap-cutoff-min=100 \
+    -Djobmanager.memory.process.size=1088m \
     -Dkubernetes.jobmanager.cpu=0.5 \
-    -Dkubernetes.taskmanager.cpu=0.5
+    -Dkubernetes.taskmanager.cpu=0.5 \
+    -Dkubernetes.rest-service.exposed.type=NodePort
+
+kubectl wait --for=condition=Available --timeout=30s deploy/${CLUSTER_ID} || exit 1
+jm_pod_name=$(kubectl get pods --selector="app=${CLUSTER_ID},component=jobmanager" -o jsonpath='{..metadata.name}')
+wait_rest_endpoint_up_k8s $jm_pod_name
 
 "$FLINK_DIR"/bin/flink run -e kubernetes-session \
     -Dkubernetes.cluster-id=${CLUSTER_ID} \
     ${FLINK_DIR}/examples/batch/WordCount.jar ${ARGS}
+
+if ! check_logs_output $jm_pod_name 'Starting KubernetesSessionClusterEntrypoint'; then
+  echo "JobManager logs are not accessible via kubectl logs."
+  exit 1
+fi
+
+tm_pod_name=$(kubectl get pods | awk '/taskmanager/ {print $1}')
+if ! check_logs_output $tm_pod_name 'Starting Kubernetes TaskExecutor runner'; then
+  echo "TaskManager logs are not accessible via kubectl logs."
+  exit 1
+fi
 
 kubectl cp `kubectl get pods | awk '/taskmanager/ {print $1}'`:${OUTPUT_PATH} ${LOCAL_OUTPUT_PATH}
 

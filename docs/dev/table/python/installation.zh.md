@@ -25,20 +25,22 @@ under the License.
 * This will be replaced by the TOC
 {:toc}
 
-## Environment Requirements
-<span class="label label-info">Note</span> Python 3.5+ is required for PyFlink. Please run the following command to make sure that it meets the requirements:
+## 环境要求
+<span class="label label-info">注意</span> PyFlink需要特定的Python版本（3.5, 3.6 或 3.7）。请运行以下命令，以确保Python版本满足要求。
 
 {% highlight bash %}
 $ python --version
-# the version printed here must be 3.5+
+# the version printed here must be 3.5, 3.6 or 3.7
 {% endhighlight %}
 
-## Installation of PyFlink
+## PyFlink 安装
 
-PyFlink has already been deployed to PyPi and can be installed as following:
+PyFlink已经被发布到PyPi，可以通过如下方式安装PyFlink：
 
 {% highlight bash %}
 $ python -m pip install apache-flink
 {% endhighlight %}
 
-You can also build PyFlink from source by following the [development guide]({{ site.baseurl }}/zh/flinkDev/building.html#build-pyflink).
+您也可以从源码手动构建PyFlink，具体可以参见[开发指南]({{ site.baseurl }}/zh/flinkDev/building.html#build-pyflink).
+
+<span class="label label-info">注意</span> 从Flink 1.11版本开始, PyFlink作业支持在Windows系统上运行，因此您也可以在Windows上开发和调试PyFlink作业了。

@@ -24,12 +24,14 @@ import org.apache.flink.kubernetes.kubeclient.parameters.KubernetesTaskManagerPa
 
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.Pod;
-import org.junit.Before;
 import org.junit.Test;
 
 import java.util.List;
 
+import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOG4J_NAME;
+import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOGBACK_NAME;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * General tests for the {@link KubernetesTaskManagerFactory}.
@@ -38,22 +40,25 @@ public class KubernetesTaskManagerFactoryTest extends KubernetesTaskManagerTestB
 
 	private Pod resultPod;
 
-	@Before
-	public void setup() throws Exception {
-		super.setup();
+	@Override
+	protected void onSetup() throws Exception {
+		super.onSetup();
 
-		KubernetesTestUtils.createTemporyFile("some data", flinkConfDir, "logback.xml");
-		KubernetesTestUtils.createTemporyFile("some data", flinkConfDir, "log4j.properties");
+		KubernetesTestUtils.createTemporyFile("some data", flinkConfDir, CONFIG_FILE_LOGBACK_NAME);
+		KubernetesTestUtils.createTemporyFile("some data", flinkConfDir, CONFIG_FILE_LOG4J_NAME);
+
+		setHadoopConfDirEnv();
+		generateHadoopConfFileItems();
 
 		this.resultPod =
-			KubernetesTaskManagerFactory.createTaskManagerComponent(kubernetesTaskManagerParameters).getInternalResource();
+			KubernetesTaskManagerFactory.buildTaskManagerKubernetesPod(kubernetesTaskManagerParameters).getInternalResource();
 	}
 
 	@Test
 	public void testPod() {
 		assertEquals(POD_NAME, this.resultPod.getMetadata().getName());
-		assertEquals(3, this.resultPod.getMetadata().getLabels().size());
-		assertEquals(1, this.resultPod.getSpec().getVolumes().size());
+		assertEquals(5, this.resultPod.getMetadata().getLabels().size());
+		assertEquals(2, this.resultPod.getSpec().getVolumes().size());
 	}
 
 	@Test
@@ -67,9 +72,15 @@ public class KubernetesTaskManagerFactoryTest extends KubernetesTaskManagerTestB
 			resultMainContainer.getName());
 		assertEquals(CONTAINER_IMAGE, resultMainContainer.getImage());
 		assertEquals(CONTAINER_IMAGE_PULL_POLICY.name(), resultMainContainer.getImagePullPolicy());
+
+		assertEquals(3, resultMainContainer.getEnv().size());
+		assertTrue(resultMainContainer.getEnv()
+			.stream()
+			.anyMatch(envVar -> envVar.getName().equals("key1")));
+
 		assertEquals(1, resultMainContainer.getPorts().size());
 		assertEquals(1, resultMainContainer.getCommand().size());
 		assertEquals(3, resultMainContainer.getArgs().size());
-		assertEquals(1, resultMainContainer.getVolumeMounts().size());
+		assertEquals(2, resultMainContainer.getVolumeMounts().size());
 	}
 }
